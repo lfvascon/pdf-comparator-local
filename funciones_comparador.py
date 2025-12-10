@@ -20,7 +20,7 @@ Image.MAX_IMAGE_PIXELS = None
 
 # --- ⬇️⬇️⬇️ CONFIGURA TU RUTA DE POPPLER AQUÍ ⬇️⬇️⬇️ ---
 # Si ya lo tienes en el PATH de Windows, puedes dejarlo como None o vacío.
-POPPLER_PATH_MANUAL = r"C:\Program Files\poppler-24.02.0\Library\bin" 
+POPPLER_PATH_MANUAL = r"C:\Users\lfvasconez\OneDrive - ACCIONA S.A\FAB\2025\12. Diciembre\4. pdf compare\app pdf compare\poppler-25.12.0\Library\bin"
 # --------------------------------------------------------
 
 def get_base_path():
