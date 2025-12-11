@@ -23,8 +23,8 @@ Aplicación de escritorio para comparar documentos PDF y detectar diferencias vi
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/tu-usuario/pdf-comparator.git
-cd pdf-comparator
+git clone https://github.com/lfvascon/pdf-comparator-local.git
+cd pdf-comparator-local
 
 # 2. Ejecutar script de instalación (instala uv automáticamente si es necesario)
 install.bat
@@ -37,8 +37,8 @@ run.bat
 
 ```bash
 # 1. Clonar el repositorio
-git clone https://github.com/tu-usuario/pdf-comparator.git
-cd pdf-comparator
+git clone https://github.com/lfvascon/pdf-comparator-local.git
+cd pdf-comparator-local
 
 # 2. Dar permisos de ejecución y ejecutar instalación
 chmod +x install.sh run.sh
