@@ -90,7 +90,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='PDFComparator',
+    name='PDFCompare',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

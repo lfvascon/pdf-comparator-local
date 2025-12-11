@@ -27,7 +27,7 @@ except ImportError:
 class MainMenu:
     """Main menu application class."""
     
-    VERSION = "v1.1"
+    VERSION = "v11122025 lfvasconez.ext@acciona.com"
     
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
