@@ -191,6 +191,50 @@ uv pip install opencv-python
 - 🎯 **Gestión automática** de entornos virtuales
 - 📦 **Compatibilidad total** con requirements.txt
 
+## 🔨 Crear Ejecutable (.exe)
+
+Para crear un ejecutable standalone que incluya Python y todas las dependencias:
+
+### Windows
+
+```bash
+# 1. Instalar PyInstaller (si no está instalado)
+uv pip install pyinstaller
+
+# 2. Ejecutar el script de build
+build.bat
+```
+
+El ejecutable se generará en `dist/PDFComparator.exe`
+
+### Linux/macOS
+
+```bash
+# 1. Instalar PyInstaller (si no está instalado)
+uv pip install pyinstaller
+
+# 2. Dar permisos de ejecución y ejecutar
+chmod +x build.sh
+./build.sh
+```
+
+El ejecutable se generará en `dist/PDFComparator`
+
+### Opciones Avanzadas
+
+Si necesitas personalizar la compilación, edita `PDFComparator.spec`:
+
+- **Agregar icono**: Descomenta y modifica la línea `icon=None` en el archivo `.spec`
+- **Incluir archivos adicionales**: Agrega rutas en la sección `datas`
+- **Modificar nombre**: Cambia `name='PDFComparator'` en el archivo `.spec`
+
+### Notas sobre el Ejecutable
+
+- **Tamaño**: El ejecutable será grande (~100-200 MB) porque incluye Python y todas las dependencias
+- **Primera ejecución**: Puede tardar unos segundos en iniciar la primera vez
+- **Antivirus**: Algunos antivirus pueden marcar el ejecutable como sospechoso (falso positivo). Es seguro.
+- **Distribución**: Puedes distribuir solo el `.exe` sin necesidad de instalar Python
+
 ## 📝 Notas
 
 - La configuración se guarda en `config.json` (se crea automáticamente)
