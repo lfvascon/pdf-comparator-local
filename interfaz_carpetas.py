@@ -116,7 +116,12 @@ class AppComparador:
         threading.Thread(target=check, daemon=True).start()
 
     def seleccionar_carpeta(self, variable_tk):
+        # Quitar topmost temporalmente para permitir que el diálogo esté encima
+        self.root.attributes('-topmost', False)
         c = filedialog.askdirectory()
+        # Restaurar ventana encima después del diálogo
+        self.root.lift()
+        self.root.focus_force()
         if c: variable_tk.set(c)
 
     def ejecutar_analisis(self):
@@ -174,6 +179,9 @@ class AppComparador:
         editor = tk.Toplevel(self.root)
         editor.title("Editar Relación")
         editor.geometry("600x300")
+        editor.transient(self.root)  # Mantiene encima de la principal pero no de diálogos del sistema
+        editor.lift()
+        editor.focus_force()
 
         tk.Label(editor, text="Origen:", font=("Arial", 10, "bold")).pack(pady=5)
         tk.Label(editor, text=reg['origen']['clave'], fg="blue").pack()
