@@ -185,7 +185,7 @@ class InterfazConfiguracion:
         self.root = root
         self.root.title("⚙️ Configuración")
         self.root.geometry("680x600")
-        self.root.resizable(False, True)
+        self.root.resizable(True, True)  # Enable maximize and minimize buttons
         
         # Store widget references
         self.widgets: dict[str, ttk.Combobox] = {}

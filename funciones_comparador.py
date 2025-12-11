@@ -8,6 +8,7 @@ import gc
 import logging
 import multiprocessing
 import os
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -18,6 +19,10 @@ import cv2
 import numpy as np
 from joblib import Parallel, delayed
 from PIL import Image
+
+# Fix multiprocessing for PyInstaller on Windows
+if sys.platform == 'win32' and getattr(sys, 'frozen', False):
+    multiprocessing.freeze_support()
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -566,7 +571,15 @@ def procesar_par_de_archivos(
         max_pages = max(n_a, n_b)
         
         imagenes_finales: list[Image.Image] = []
-        cores = max(1, min(2, multiprocessing.cpu_count() - 1))
+        
+        # Use threading instead of multiprocessing in frozen executables to avoid multiple windows
+        if getattr(sys, 'frozen', False):
+            # In frozen executable, use threading backend to avoid multiprocessing issues
+            cores = 1  # Use single thread to avoid issues
+            backend = 'threading'
+        else:
+            cores = max(1, min(2, multiprocessing.cpu_count() - 1))
+            backend = 'loky'  # Default multiprocessing backend
         
         batch_size = get_batch_size()
         for lote_inicio in range(1, max_pages + 1, batch_size):
@@ -593,8 +606,8 @@ def procesar_par_de_archivos(
             pages_a.extend([None] * (lote_size - len(pages_a)))
             pages_b.extend([None] * (lote_size - len(pages_b)))
             
-            # Process in parallel
-            imgs_lote = Parallel(n_jobs=cores, verbose=0)(
+            # Process in parallel (or sequential if frozen)
+            imgs_lote = Parallel(n_jobs=cores, verbose=0, backend=backend)(
                 delayed(procesar_hoja_premium)(pages_a[i], pages_b[i], lote_inicio + i) 
                 for i in range(lote_size)
             )

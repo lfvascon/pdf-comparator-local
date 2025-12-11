@@ -27,12 +27,13 @@ except ImportError:
 class MainMenu:
     """Main menu application class."""
     
-    VERSION = "v11122025 lfvasconez.ext@acciona.com"
+    VERSION = "dic 2025 lfvasconez.ext@acciona.com"
     
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Menú de Herramientas PDF")
         self.root.geometry("400x350")
+        self.root.resizable(True, True)  # Enable maximize and minimize buttons
         self._crear_widgets()
 
     def _crear_widgets(self) -> None:
@@ -147,4 +148,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # Fix for PyInstaller multiprocessing on Windows
+    import sys
+    import multiprocessing
+    if sys.platform == 'win32' and getattr(sys, 'frozen', False):
+        multiprocessing.freeze_support()
     main()

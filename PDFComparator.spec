@@ -6,12 +6,18 @@ This file configures how PyInstaller builds the executable.
 
 import sys
 from pathlib import Path
+import os
 
 block_cipher = None
 
 # Get the base directory (current directory where spec file is located)
-import os
 base_dir = Path(os.path.dirname(os.path.abspath(SPECPATH)))
+
+# Collect Tcl/Tk data files for tkinter
+# In Windows, Tcl/Tk files are in the Python root directory under 'tcl' folder
+import sys
+python_root = Path(sys.prefix)
+tcl_path = python_root / 'tcl'
 
 # Collect all Python files in the project
 a = Analysis(
@@ -20,7 +26,10 @@ a = Analysis(
     binaries=[],
     datas=[
         # Include config.json if it exists
-    ] + ([(str(Path('config.json')), '.')] if Path('config.json').exists() else []),
+    ] + ([(str(Path('config.json')), '.')] if Path('config.json').exists() else []) + (
+        # Include Tcl/Tk data files (entire tcl directory contains both tcl8.6 and tk8.6)
+        [(str(tcl_path), 'tcl')] if tcl_path.exists() else []
+    ),
     hiddenimports=[
         # Core modules
         'menu_principal',

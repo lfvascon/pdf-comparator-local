@@ -19,6 +19,7 @@ class AppComparadorArchivos:
         self.root = root
         self.root.title("Comparación de Archivos PDF (Modo Individual)")
         self.root.geometry("550x450")
+        self.root.resizable(True, True)  # Enable maximize and minimize buttons
         
         # State variables
         self.ruta_pdf1 = tk.StringVar()

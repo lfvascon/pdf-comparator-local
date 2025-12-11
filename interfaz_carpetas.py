@@ -42,15 +42,28 @@ class AppComparador:
 
     def _configure_window(self) -> None:
         """Configure window size based on platform."""
+        # Enable maximize and minimize buttons
+        self.root.resizable(True, True)
+        # Set initial size
+        self.root.geometry("1200x700")
+        # Maximize after a short delay to ensure layout is correct
+        self.root.after(100, self._maximize_window)
+    
+    def _maximize_window(self) -> None:
+        """Maximize window after layout is complete."""
         if sys.platform == 'win32':
             self.root.state('zoomed')
         else:
             self.root.attributes('-zoomed', True)
+        # Force update to ensure bottom frame is visible
+        self.root.update_idletasks()
 
     def _crear_widgets(self) -> None:
         """Create and layout all GUI widgets."""
+        # Create frames in order: top, middle (expandable), bottom (fixed)
         self._crear_frame_superior()
         self._crear_frame_tabla()
+        # Bottom frame must be created last and packed with side="bottom"
         self._crear_frame_inferior()
 
     def _crear_frame_superior(self) -> None:
@@ -84,7 +97,7 @@ class AppComparador:
     def _crear_frame_tabla(self) -> None:
         """Create the central frame with results table."""
         frame_tabla = tk.Frame(self.root)
-        frame_tabla.pack(fill="both", expand=True, padx=10, pady=5)
+        frame_tabla.pack(fill="both", expand=True, padx=10, pady=5, before=None)
 
         columns = ("origen", "destino", "similitud")
         self.tree = ttk.Treeview(frame_tabla, columns=columns, show="headings")
@@ -118,20 +131,26 @@ class AppComparador:
     def _crear_frame_inferior(self) -> None:
         """Create the bottom frame with progress bar and process button."""
         frame_bottom = tk.Frame(self.root)
-        frame_bottom.pack(fill="x", padx=10, pady=5)
+        frame_bottom.pack(fill="x", padx=10, pady=5, side="bottom")
+
+        # Left side: Progress bar and status
+        left_frame = tk.Frame(frame_bottom)
+        left_frame.pack(side="left", fill="x", expand=True, padx=5)
 
         self.progress_var = tk.DoubleVar()
         self.progress_bar = ttk.Progressbar(
-            frame_bottom, 
+            left_frame, 
             variable=self.progress_var, 
             maximum=100, 
-            length=400
+            length=400,
+            mode='determinate'
         )
         self.progress_bar.pack(side="left", padx=5)
 
-        self.status_label = tk.Label(frame_bottom, text="Listo", anchor="w")
+        self.status_label = tk.Label(left_frame, text="Listo", anchor="w")
         self.status_label.pack(side="left", padx=5, fill="x", expand=True)
 
+        # Right side: Process button
         tk.Button(
             frame_bottom, 
             text="✅ PROCESAR PDFs", 
@@ -139,7 +158,8 @@ class AppComparador:
             fg="white",
             font=("Arial", 11, "bold"), 
             command=self._procesar_pdfs, 
-            pady=5
+            pady=5,
+            width=20
         ).pack(side="right", padx=5)
 
     def _verificar_pymupdf(self) -> None:
@@ -220,6 +240,7 @@ class AppComparador:
         editor = tk.Toplevel(self.root)
         editor.title("Editar Relación")
         editor.geometry("600x300")
+        editor.resizable(True, True)  # Enable maximize and minimize buttons
         editor.transient(self.root)
         editor.lift()
         editor.focus_force()
