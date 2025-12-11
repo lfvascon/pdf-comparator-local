@@ -1,0 +1,9 @@
+{
+  "dpi": 300,
+  "batch_size": 3,
+  "min_contour_area": 10,
+  "similarity_threshold": 0.4,
+  "orb_max_features": 15000,
+  "match_ratio": 0.3,
+  "min_matches_homography": 6
+}

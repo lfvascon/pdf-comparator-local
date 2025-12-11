@@ -40,14 +40,41 @@ except ImportError:
 
 Image.MAX_IMAGE_PIXELS = None
 
-# Constants
-DPI_DEFAULT: int = 300
-BATCH_SIZE: int = 5
-MIN_CONTOUR_AREA: int = 5
-SIMILARITY_THRESHOLD: float = 0.5
-ORB_MAX_FEATURES: int = 10000
-MATCH_RATIO: float = 0.20
-MIN_MATCHES_FOR_HOMOGRAPHY: int = 4
+# Import configuration module
+try:
+    from configuracion import get_config
+    CONFIG_AVAILABLE = True
+except ImportError:
+    CONFIG_AVAILABLE = False
+
+# Configuration getters - use config file if available, otherwise defaults
+def get_dpi() -> int:
+    """Get DPI setting."""
+    return get_config().dpi if CONFIG_AVAILABLE else 300
+
+def get_batch_size() -> int:
+    """Get batch size setting."""
+    return get_config().batch_size if CONFIG_AVAILABLE else 5
+
+def get_min_contour_area() -> int:
+    """Get minimum contour area setting."""
+    return get_config().min_contour_area if CONFIG_AVAILABLE else 5
+
+def get_similarity_threshold() -> float:
+    """Get similarity threshold setting."""
+    return get_config().similarity_threshold if CONFIG_AVAILABLE else 0.5
+
+def get_orb_max_features() -> int:
+    """Get ORB max features setting."""
+    return get_config().orb_max_features if CONFIG_AVAILABLE else 10000
+
+def get_match_ratio() -> float:
+    """Get match ratio setting."""
+    return get_config().match_ratio if CONFIG_AVAILABLE else 0.20
+
+def get_min_matches_homography() -> int:
+    """Get minimum matches for homography setting."""
+    return get_config().min_matches_homography if CONFIG_AVAILABLE else 4
 
 
 @dataclass(frozen=True)
@@ -96,7 +123,7 @@ def encontrar_texto_comun(str1: str, str2: str) -> str:
     return str1[match.a:match.a + match.size] if match.size > 0 else ""
 
 
-def detectar_mejor_patron(lista_archivos: list[str], umbral: float = SIMILARITY_THRESHOLD) -> str | None:
+def detectar_mejor_patron(lista_archivos: list[str], umbral: float | None = None) -> str | None:
     """
     Detect the best common pattern among a list of filenames.
     
@@ -107,6 +134,9 @@ def detectar_mejor_patron(lista_archivos: list[str], umbral: float = SIMILARITY_
     Returns:
         Best pattern found or None
     """
+    if umbral is None:
+        umbral = get_similarity_threshold()
+    
     if not lista_archivos:
         return None
     
@@ -187,7 +217,7 @@ def procesar_carpeta(ruta: str | Path) -> dict[str, dict[str, str]]:
 def comparar_listas_completo(
     dic1: dict[str, dict[str, str]], 
     dic2: dict[str, dict[str, str]], 
-    umbral: float = SIMILARITY_THRESHOLD
+    umbral: float | None = None
 ) -> list[dict]:
     """
     Compare two file dictionaries and find matches.
@@ -200,6 +230,9 @@ def comparar_listas_completo(
     Returns:
         List of match records
     """
+    if umbral is None:
+        umbral = get_similarity_threshold()
+    
     resultados: list[dict] = []
     destinos_emparejados: set[str] = set()
 
@@ -255,7 +288,7 @@ def comparar_listas_completo(
 # IMAGE PROCESSING
 # ==========================================
 
-def limpiar_ruido_mascara(mask: np.ndarray, min_area: int = MIN_CONTOUR_AREA) -> np.ndarray:
+def limpiar_ruido_mascara(mask: np.ndarray, min_area: int | None = None) -> np.ndarray:
     """
     Remove noise from a binary mask by filtering small contours.
     
@@ -266,6 +299,9 @@ def limpiar_ruido_mascara(mask: np.ndarray, min_area: int = MIN_CONTOUR_AREA) ->
     Returns:
         Cleaned binary mask
     """
+    if min_area is None:
+        min_area = get_min_contour_area()
+    
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     mask_clean = np.zeros_like(mask)
     
@@ -292,7 +328,7 @@ def alinear_imagen(img_base: np.ndarray, img_a_mover: np.ndarray) -> np.ndarray:
     gray_move = cv2.cvtColor(img_a_mover, cv2.COLOR_RGB2GRAY) if img_a_mover.ndim == 3 else img_a_mover
 
     # Feature detection
-    orb = cv2.ORB_create(ORB_MAX_FEATURES)
+    orb = cv2.ORB_create(get_orb_max_features())
     keypoints1, descriptors1 = orb.detectAndCompute(gray_move, None)
     keypoints2, descriptors2 = orb.detectAndCompute(gray_base, None)
 
@@ -304,9 +340,9 @@ def alinear_imagen(img_base: np.ndarray, img_a_mover: np.ndarray) -> np.ndarray:
     # Match features
     bf = cv2.BFMatcher(cv2.DESCRIPTOR_MATCHER_BRUTEFORCE_HAMMING, crossCheck=True)
     matches = sorted(bf.match(descriptors1, descriptors2), key=lambda x: x.distance)
-    good_matches = matches[:int(len(matches) * MATCH_RATIO)]
+    good_matches = matches[:int(len(matches) * get_match_ratio())]
 
-    if len(good_matches) < MIN_MATCHES_FOR_HOMOGRAPHY:
+    if len(good_matches) < get_min_matches_homography():
         return cv2.resize(img_a_mover, target_size)
 
     # Calculate homography
@@ -435,7 +471,7 @@ def obtener_numero_paginas(pdf_path: str | Path) -> int:
 
 def pdf_a_imagenes(
     pdf_path: str | Path, 
-    dpi: int = DPI_DEFAULT, 
+    dpi: int | None = None, 
     first_page: int | None = None, 
     last_page: int | None = None
 ) -> list[Image.Image]:
@@ -457,6 +493,9 @@ def pdf_a_imagenes(
     """
     if not PYMUPDF_AVAILABLE:
         raise ImportError("PyMuPDF not installed. Install with: pip install PyMuPDF")
+    
+    if dpi is None:
+        dpi = get_dpi()
     
     try:
         with open_pdf(pdf_path) as doc:
@@ -485,7 +524,7 @@ def procesar_par_de_archivos(
     carpeta_salida: str | Path,
     callback_progreso: Callable[[str], None] | None = None,
     callback_estado: Callable[[str], None] | None = None,
-    dpi: int = DPI_DEFAULT
+    dpi: int | None = None
 ) -> bool:
     """
     Process a pair of PDF files and generate a comparison PDF.
@@ -504,6 +543,9 @@ def procesar_par_de_archivos(
         if callback_estado:
             callback_estado("❌ PyMuPDF not installed. Install with: pip install PyMuPDF")
         return False
+    
+    if dpi is None:
+        dpi = get_dpi()
     
     ruta_original = registro_match['origen']['ruta']
     ruta_nueva = registro_match['destino']['ruta']
@@ -526,8 +568,9 @@ def procesar_par_de_archivos(
         imagenes_finales: list[Image.Image] = []
         cores = max(1, min(2, multiprocessing.cpu_count() - 1))
         
-        for lote_inicio in range(1, max_pages + 1, BATCH_SIZE):
-            lote_fin = min(lote_inicio + BATCH_SIZE - 1, max_pages)
+        batch_size = get_batch_size()
+        for lote_inicio in range(1, max_pages + 1, batch_size):
+            lote_fin = min(lote_inicio + batch_size - 1, max_pages)
             
             if callback_estado:
                 callback_estado(f"📄 Page {lote_inicio}-{lote_fin}/{max_pages}: {nombre_base[:30]}...")

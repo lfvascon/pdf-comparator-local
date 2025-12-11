@@ -18,6 +18,11 @@ try:
 except ImportError:
     AppComparadorArchivos = None
 
+try:
+    from configuracion import abrir_configuracion
+except ImportError:
+    abrir_configuracion = None
+
 
 class MainMenu:
     """Main menu application class."""
@@ -27,7 +32,7 @@ class MainMenu:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Menú de Herramientas PDF")
-        self.root.geometry("400x300")
+        self.root.geometry("400x350")
         self._crear_widgets()
 
     def _crear_widgets(self) -> None:
@@ -70,6 +75,17 @@ class MainMenu:
             command=self._abrir_interfaz_carpetas
         ).pack(pady=10)
 
+        # Configuration button
+        tk.Button(
+            frame_botones, 
+            text="⚙️ Configuración", 
+            font=("Arial", 10),
+            width=25, 
+            height=1, 
+            command=self._abrir_configuracion,
+            fg="#666"
+        ).pack(pady=5)
+
         # Footer
         tk.Label(
             self.root, 
@@ -109,6 +125,18 @@ class MainMenu:
         ventana.lift()
         ventana.focus_force()
         AppComparador(ventana)
+
+    def _abrir_configuracion(self) -> None:
+        """Open the configuration interface."""
+        if abrir_configuracion is None:
+            messagebox.showerror(
+                "Error", 
+                "No se encontró el archivo 'configuracion.py'.\n"
+                "Asegúrate de tenerlo en la misma carpeta."
+            )
+            return
+        
+        abrir_configuracion(self.root)
 
 
 def main() -> None:
