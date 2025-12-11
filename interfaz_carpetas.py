@@ -1,82 +1,109 @@
+"""
+Folder Comparison Interface Module.
+Provides GUI for batch PDF comparison between two folders.
+"""
+from __future__ import annotations
+
+import gc
+import os
+import sys
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-import sys
-import os
-import threading
-import gc
+from typing import TYPE_CHECKING
 
-# IMPORTE CRÍTICO: Traemos la lógica del otro archivo
-# Asegúrate de que ambos archivos estén en la misma carpeta
 import funciones_comparador as fc
 
+if TYPE_CHECKING:
+    from tkinter import Event
+
+
 class AppComparador:
-    def __init__(self, root):
+    """Main application class for folder-based PDF comparison."""
+    
+    def __init__(self, root: tk.Tk | tk.Toplevel) -> None:
         self.root = root
         self.root.title("Comparador de PDFs - Interfaz Completa")
         
-        # Configurar pantalla completa / maximizada
+        # Configure window size
+        self._configure_window()
+        
+        # State variables
+        self.ruta_base = tk.StringVar()
+        self.ruta_cambio = tk.StringVar()
+        self.ruta_salida = tk.StringVar()
+        self.resultados: list[dict] = []
+        self.datos_destino: dict[str, dict[str, str]] = {}
+        self.pymupdf_disponible = False
+        self.procesando = False
+
+        self._crear_widgets()
+        self._verificar_pymupdf()
+
+    def _configure_window(self) -> None:
+        """Configure window size based on platform."""
         if sys.platform == 'win32':
             self.root.state('zoomed')
         else:
             self.root.attributes('-zoomed', True)
-        
-        # Variables de estado
-        self.ruta_base = tk.StringVar()
-        self.ruta_cambio = tk.StringVar()
-        self.ruta_salida = tk.StringVar()
-        self.resultados = []
-        self.datos_destino = {}
-        self.pymupdf_disponible = False
-        self.procesando = False
 
-        self.crear_widgets()
-        
-        # Verificar PyMuPDF al iniciar
-        self.verificar_pymupdf()
+    def _crear_widgets(self) -> None:
+        """Create and layout all GUI widgets."""
+        self._crear_frame_superior()
+        self._crear_frame_tabla()
+        self._crear_frame_inferior()
 
-    def crear_widgets(self):
-        # Frame Superior (Selección de Carpetas)
+    def _crear_frame_superior(self) -> None:
+        """Create the top frame with folder selection inputs."""
         frame_top = tk.Frame(self.root, pady=10)
         frame_top.pack(fill="x", padx=10)
 
-        # Fila 1: Origen
-        tk.Label(frame_top, text="Carpeta Origen:").grid(row=0, column=0, padx=5, sticky="w")
-        tk.Entry(frame_top, textvariable=self.ruta_base, width=70).grid(row=0, column=1, padx=5)
-        tk.Button(frame_top, text="📂", command=lambda: self.seleccionar_carpeta(self.ruta_base)).grid(row=0, column=2)
+        # Row configuration
+        labels = ["Carpeta Origen:", "Carpeta Destino:", "Guardar Resultados en:"]
+        variables = [self.ruta_base, self.ruta_cambio, self.ruta_salida]
 
-        # Fila 2: Destino
-        tk.Label(frame_top, text="Carpeta Destino:").grid(row=1, column=0, padx=5, sticky="w")
-        tk.Entry(frame_top, textvariable=self.ruta_cambio, width=70).grid(row=1, column=1, padx=5)
-        tk.Button(frame_top, text="📂", command=lambda: self.seleccionar_carpeta(self.ruta_cambio)).grid(row=1, column=2)
+        for row, (label_text, var) in enumerate(zip(labels, variables)):
+            tk.Label(frame_top, text=label_text).grid(row=row, column=0, padx=5, sticky="w")
+            tk.Entry(frame_top, textvariable=var, width=70).grid(row=row, column=1, padx=5)
+            tk.Button(
+                frame_top, 
+                text="📂", 
+                command=lambda v=var: self._seleccionar_carpeta(v)
+            ).grid(row=row, column=2)
 
-        # Fila 3: Salida
-        tk.Label(frame_top, text="Guardar Resultados en:").grid(row=2, column=0, padx=5, sticky="w")
-        tk.Entry(frame_top, textvariable=self.ruta_salida, width=70).grid(row=2, column=1, padx=5)
-        tk.Button(frame_top, text="📂", command=lambda: self.seleccionar_carpeta(self.ruta_salida)).grid(row=2, column=2)
+        # Analyze button
+        tk.Button(
+            frame_top, 
+            text="🔍 ANALIZAR COINCIDENCIAS", 
+            bg="#4CAF50", 
+            fg="white",
+            font=("Arial", 10, "bold"), 
+            command=self._ejecutar_analisis
+        ).grid(row=3, column=0, columnspan=3, pady=10)
 
-        # Fila 4: Botón Analizar
-        tk.Button(frame_top, text="🔍 ANALIZAR COINCIDENCIAS", bg="#4CAF50", fg="white", 
-                  font=("Arial", 10, "bold"), command=self.ejecutar_analisis).grid(row=3, column=0, columnspan=3, pady=10)
-
-        # Frame Central (Tabla)
+    def _crear_frame_tabla(self) -> None:
+        """Create the central frame with results table."""
         frame_tabla = tk.Frame(self.root)
         frame_tabla.pack(fill="both", expand=True, padx=10, pady=5)
 
         columns = ("origen", "destino", "similitud")
         self.tree = ttk.Treeview(frame_tabla, columns=columns, show="headings")
         
-        self.tree.heading("origen", text="Archivo Origen")
-        self.tree.heading("destino", text="Archivo Destino (Editable)")
-        self.tree.heading("similitud", text="% / Estado")
-        
-        self.tree.column("origen", width=450)
-        self.tree.column("destino", width=450)
-        self.tree.column("similitud", width=120, anchor="center")
+        # Configure columns
+        headings = [
+            ("origen", "Archivo Origen", 450),
+            ("destino", "Archivo Destino (Editable)", 450),
+            ("similitud", "% / Estado", 120)
+        ]
+        for col_id, text, width in headings:
+            self.tree.heading(col_id, text=text)
+            anchor = "center" if col_id == "similitud" else "w"
+            self.tree.column(col_id, width=width, anchor=anchor)
 
-        # Colores para estados
+        # Configure tags for row colors
         self.tree.tag_configure('match', background='white')
-        self.tree.tag_configure('manual', background='#E0F7FA') # Azul claro
-        self.tree.tag_configure('error', background='#FFCDD2') # Rojo claro
+        self.tree.tag_configure('manual', background='#E0F7FA')
+        self.tree.tag_configure('error', background='#FFCDD2')
 
         # Scrollbar
         scrollbar = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
@@ -85,48 +112,64 @@ class AppComparador:
         self.tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
-        # Evento doble clic
-        self.tree.bind("<Double-1>", self.abrir_editor)
+        # Double-click event
+        self.tree.bind("<Double-1>", self._abrir_editor)
 
-        # Frame Inferior (Progreso)
+    def _crear_frame_inferior(self) -> None:
+        """Create the bottom frame with progress bar and process button."""
         frame_bottom = tk.Frame(self.root)
         frame_bottom.pack(fill="x", padx=10, pady=5)
 
         self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(frame_bottom, variable=self.progress_var, maximum=100, length=400)
+        self.progress_bar = ttk.Progressbar(
+            frame_bottom, 
+            variable=self.progress_var, 
+            maximum=100, 
+            length=400
+        )
         self.progress_bar.pack(side="left", padx=5)
 
         self.status_label = tk.Label(frame_bottom, text="Listo", anchor="w")
         self.status_label.pack(side="left", padx=5, fill="x", expand=True)
 
-        tk.Button(frame_bottom, text="✅ PROCESAR PDFs", bg="#2196F3", fg="white", 
-                  font=("Arial", 11, "bold"), command=self.procesar_pdfs, pady=5).pack(side="right", padx=5)
+        tk.Button(
+            frame_bottom, 
+            text="✅ PROCESAR PDFs", 
+            bg="#2196F3", 
+            fg="white",
+            font=("Arial", 11, "bold"), 
+            command=self._procesar_pdfs, 
+            pady=5
+        ).pack(side="right", padx=5)
 
-    def verificar_pymupdf(self):
-        """Verifica PyMuPDF usando la función importada."""
-        def check():
+    def _verificar_pymupdf(self) -> None:
+        """Verify PyMuPDF availability in background thread."""
+        def check() -> None:
             self.pymupdf_disponible = fc.verificar_pymupdf_disponible()
-            if self.pymupdf_disponible:
-                self.root.after(0, lambda: self.status_label.config(text="✓ PyMuPDF disponible"))
-            else:
+            msg = "✓ PyMuPDF disponible" if self.pymupdf_disponible else "⚠️ PyMuPDF no detectado"
+            self.root.after(0, lambda: self.status_label.config(text=msg))
+            
+            if not self.pymupdf_disponible:
                 self.root.after(0, lambda: messagebox.showerror(
-                    "Error Crítico", 
+                    "Error Crítico",
                     "PyMuPDF no está instalado.\nInstálalo con: pip install PyMuPDF"
                 ))
+        
         threading.Thread(target=check, daemon=True).start()
 
-    def seleccionar_carpeta(self, variable_tk):
-        # Quitar topmost temporalmente para permitir que el diálogo esté encima
+    def _seleccionar_carpeta(self, variable_tk: tk.StringVar) -> None:
+        """Open folder selection dialog."""
         self.root.attributes('-topmost', False)
-        c = filedialog.askdirectory()
-        # Restaurar ventana encima después del diálogo
+        carpeta = filedialog.askdirectory()
         self.root.lift()
         self.root.focus_force()
-        if c: variable_tk.set(c)
+        
+        if carpeta:
+            variable_tk.set(carpeta)
 
-    def ejecutar_analisis(self):
-        r1 = self.ruta_base.get()
-        r2 = self.ruta_cambio.get()
+    def _ejecutar_analisis(self) -> None:
+        """Execute folder analysis and find file matches."""
+        r1, r2 = self.ruta_base.get(), self.ruta_cambio.get()
 
         if not r1 or not r2:
             messagebox.showwarning("Error", "Selecciona ambas carpetas.")
@@ -135,43 +178,41 @@ class AppComparador:
         self.status_label.config(text="Analizando archivos...")
         self.root.update()
 
-        # Llamar a funciones del backend
+        # Process folders
         res1 = fc.procesar_carpeta(r1)
         self.datos_destino = fc.procesar_carpeta(r2)
-        
         self.resultados = fc.comparar_listas_completo(res1, self.datos_destino, umbral=0.5)
         
-        # Limpieza
-        del res1
-        gc.collect()
-        
-        self.refrescar_tabla()
-        n_match = len([r for r in self.resultados if r['tipo'] in ['match', 'manual']])
+        self._refrescar_tabla()
+        n_match = sum(1 for r in self.resultados if r['tipo'] in ('match', 'manual'))
         self.status_label.config(text=f"Análisis completado: {n_match} coincidencias.")
 
-    def refrescar_tabla(self):
+    def _refrescar_tabla(self) -> None:
+        """Refresh the results table."""
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+        tag_map = {'match': 'match', 'manual': 'manual'}
+        
         for i, match in enumerate(self.resultados):
-            if match is None: continue
+            if match is None:
+                continue
 
-            tipo = match['tipo']
-            if tipo == 'match': tag = 'match'
-            elif tipo == 'manual': tag = 'manual'
-            else: tag = 'error'
-            
-            val_origen = match['origen']['clave']
-            val_destino = match['destino']['clave']
-            val_score = match['similitud_pct']
-            
-            if tag == 'error': val_score = "HUÉRFANO"
+            tag = tag_map.get(match['tipo'], 'error')
+            val_score = "HUÉRFANO" if tag == 'error' else match['similitud_pct']
 
-            self.tree.insert("", "end", iid=i, values=(val_origen, val_destino, val_score), tags=(tag,))
+            self.tree.insert(
+                "", "end", 
+                iid=i, 
+                values=(match['origen']['clave'], match['destino']['clave'], val_score), 
+                tags=(tag,)
+            )
 
-    def abrir_editor(self, event):
+    def _abrir_editor(self, event: Event) -> None:
+        """Open the relationship editor dialog."""
         sel = self.tree.selection()
-        if not sel: return
+        if not sel:
+            return
         
         idx = int(sel[0])
         reg = self.resultados[idx]
@@ -179,7 +220,7 @@ class AppComparador:
         editor = tk.Toplevel(self.root)
         editor.title("Editar Relación")
         editor.geometry("600x300")
-        editor.transient(self.root)  # Mantiene encima de la principal pero no de diálogos del sistema
+        editor.transient(self.root)
         editor.lift()
         editor.focus_force()
 
@@ -188,42 +229,48 @@ class AppComparador:
 
         tk.Label(editor, text="Selecciona Destino Correcto:", font=("Arial", 10, "bold")).pack(pady=10)
 
-        opciones = sorted(list(self.datos_destino.keys()))
+        opciones = sorted(self.datos_destino.keys())
         combo = ttk.Combobox(editor, values=opciones, width=70)
         combo.pack(pady=5)
         
-        actual = reg['destino']['clave']
-        if actual in opciones: combo.set(actual)
+        if reg['destino']['clave'] in opciones:
+            combo.set(reg['destino']['clave'])
 
-        def guardar():
+        def guardar() -> None:
             nuevo = combo.get()
-            if not nuevo: return
+            if not nuevo:
+                return
             datos = self.datos_destino.get(nuevo)
             if datos:
-                self.resultados[idx]['destino'] = {"clave": nuevo, "valor": datos["valor"], "ruta": datos["path"]}
+                self.resultados[idx]['destino'] = {
+                    "clave": nuevo, 
+                    "valor": datos["valor"], 
+                    "ruta": datos["path"]
+                }
                 self.resultados[idx]['tipo'] = 'manual'
                 self.resultados[idx]['similitud_pct'] = '100% (Manual)'
-                self.refrescar_tabla()
+                self._refrescar_tabla()
                 editor.destroy()
 
-        def borrar():
+        def borrar() -> None:
             self.resultados[idx]['destino'] = {"clave": "---", "valor": "", "ruta": ""}
             self.resultados[idx]['tipo'] = 'solo_origen'
             self.resultados[idx]['similitud_pct'] = '0%'
-            self.refrescar_tabla()
+            self._refrescar_tabla()
             editor.destroy()
 
-        f_btn = tk.Frame(editor)
-        f_btn.pack(pady=20)
-        tk.Button(f_btn, text="💾 GUARDAR", bg="#4CAF50", fg="white", command=guardar).pack(side="left", padx=10)
-        tk.Button(f_btn, text="❌ DESVINCULAR", bg="#F44336", fg="white", command=borrar).pack(side="left", padx=10)
+        frame_btn = tk.Frame(editor)
+        frame_btn.pack(pady=20)
+        tk.Button(frame_btn, text="💾 GUARDAR", bg="#4CAF50", fg="white", command=guardar).pack(side="left", padx=10)
+        tk.Button(frame_btn, text="❌ DESVINCULAR", bg="#F44336", fg="white", command=borrar).pack(side="left", padx=10)
 
-    def procesar_pdfs(self):
+    def _procesar_pdfs(self) -> None:
+        """Process all matched PDFs and generate comparisons."""
         if not self.pymupdf_disponible:
             messagebox.showerror("Error", "PyMuPDF no disponible.\nInstálalo con: pip install PyMuPDF")
             return
 
-        lista_final = [r for r in self.resultados if r and r['tipo'] in ['match', 'manual']]
+        lista_final = [r for r in self.resultados if r and r['tipo'] in ('match', 'manual')]
         if not lista_final:
             messagebox.showwarning("Alerta", "No hay coincidencias válidas.")
             return
@@ -232,52 +279,54 @@ class AppComparador:
         if not salida:
             messagebox.showwarning("Alerta", "Selecciona carpeta de salida.")
             return
-        if not os.path.exists(salida): os.makedirs(salida)
+        
+        os.makedirs(salida, exist_ok=True)
 
-        if self.procesando: return
+        if self.procesando:
+            return
+        
         self.procesando = True
         self.progress_var.set(0)
 
-        def worker():
+        def worker() -> None:
             exitosos = 0
             fallidos = 0
             total = len(lista_final)
 
-            def cb_prog(nombre):
+            def cb_prog(nombre: str) -> None:
                 nonlocal exitosos
                 exitosos += 1
-                p = (exitosos / total) * 100 if total > 0 else 0
-                self.root.after(0, lambda: self.progress_var.set(p))
+                progress = (exitosos / total) * 100 if total > 0 else 0
+                self.root.after(0, lambda: self.progress_var.set(progress))
 
-            def cb_estado(msg):
+            def cb_estado(msg: str) -> None:
                 self.root.after(0, lambda: self.status_label.config(text=msg))
 
             for i, match in enumerate(lista_final):
-                nombre = os.path.basename(match['origen']['ruta'])
-                self.root.after(0, lambda p=(i/total)*100: self.progress_var.set(p))
+                self.root.after(0, lambda p=(i / total) * 100: self.progress_var.set(p))
                 
-                res = fc.procesar_par_de_archivos(
-                    match, 
-                    salida, 
+                if not fc.procesar_par_de_archivos(
+                    match, salida, 
                     callback_progreso=cb_prog, 
                     callback_estado=cb_estado
-                )
-                
-                if not res:
+                ):
                     fallidos += 1
-                    exitosos += 1 # Contamos como procesado aunque falle para la barra
+                    exitosos += 1
                 
-                if (i+1) % 3 == 0: gc.collect()
+                if (i + 1) % 3 == 0:
+                    gc.collect()
 
-            self.root.after(0, lambda: self.finalizar(exitosos, fallidos, salida))
+            self.root.after(0, lambda: self._finalizar(exitosos, fallidos, salida))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def finalizar(self, ok, fail, ruta):
+    def _finalizar(self, ok: int, fail: int, ruta: str) -> None:
+        """Finalize processing and show results."""
         self.procesando = False
         self.progress_var.set(100)
         self.status_label.config(text="Proceso finalizado.")
         messagebox.showinfo("Fin", f"Exitosos: {ok}\nFallidos: {fail}\nGuardado en: {ruta}")
+
 
 if __name__ == "__main__":
     root = tk.Tk()

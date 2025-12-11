@@ -1,133 +1,180 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
-import sys
+"""
+Individual File Comparison Interface Module.
+Provides GUI for comparing two individual PDF files.
+"""
+from __future__ import annotations
+
 import os
 import threading
-import gc
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
 
-# IMPORTE CRÍTICO: Traemos la lógica del otro archivo
-# Asegúrate de que ambos archivos estén en la misma carpeta
 import funciones_comparador as fc
 
+
 class AppComparadorArchivos:
-    def __init__(self, root):
+    """Application class for individual PDF file comparison."""
+    
+    def __init__(self, root: tk.Tk | tk.Toplevel) -> None:
         self.root = root
         self.root.title("Comparación de Archivos PDF (Modo Individual)")
         self.root.geometry("550x450")
         
-        # Variables de estado
+        # State variables
         self.ruta_pdf1 = tk.StringVar()
         self.ruta_pdf2 = tk.StringVar()
         self.ruta_salida = tk.StringVar()
         self.pymupdf_disponible = False
         self.procesando = False
 
-        self.crear_widgets()
-        
-        # Verificar PyMuPDF al iniciar
-        self.verificar_pymupdf()
+        self._crear_widgets()
+        self._verificar_pymupdf()
 
-    def crear_widgets(self):
-        # Título
-        tk.Label(self.root, text="Comparación Individual de PDFs", font=("Arial", 14, "bold")).pack(pady=10)
+    def _crear_widgets(self) -> None:
+        """Create and layout all GUI widgets."""
+        # Title
+        tk.Label(
+            self.root, 
+            text="Comparación Individual de PDFs", 
+            font=("Arial", 14, "bold")
+        ).pack(pady=10)
 
-        # Frame de selección
+        # Selection frame
         frame_seleccion = tk.Frame(self.root)
         frame_seleccion.pack(fill="x", padx=20, pady=5)
 
-        # Archivo Origen
-        frame_1 = tk.Frame(frame_seleccion, relief="groove", bd=2)
-        frame_1.pack(fill="x", pady=5)
-        tk.Label(frame_1, text="Archivo Origen:", font=("Arial", 9, "bold")).pack(anchor="w", padx=5, pady=2)
-        tk.Button(frame_1, text="📄 Seleccionar Original", command=self.seleccionar_pdf_1).pack(pady=2)
-        self.lbl_info1 = tk.Label(frame_1, text="Sin selección", fg="gray", wraplength=500)
-        self.lbl_info1.pack(pady=2)
+        # File selection frames
+        self._crear_frame_archivo(
+            frame_seleccion, 
+            "Archivo Origen:", 
+            "📄 Seleccionar Original",
+            self._seleccionar_pdf_1,
+            "lbl_info1"
+        )
+        
+        self._crear_frame_archivo(
+            frame_seleccion, 
+            "Archivo Destino:", 
+            "📄 Seleccionar Nuevo",
+            self._seleccionar_pdf_2,
+            "lbl_info2"
+        )
+        
+        self._crear_frame_archivo(
+            frame_seleccion, 
+            "Carpeta de Salida:", 
+            "📂 Seleccionar Carpeta",
+            self._seleccionar_carpeta_salida,
+            "lbl_info_salida"
+        )
 
-        # Archivo Destino
-        frame_2 = tk.Frame(frame_seleccion, relief="groove", bd=2)
-        frame_2.pack(fill="x", pady=5)
-        tk.Label(frame_2, text="Archivo Destino:", font=("Arial", 9, "bold")).pack(anchor="w", padx=5, pady=2)
-        tk.Button(frame_2, text="📄 Seleccionar Nuevo", command=self.seleccionar_pdf_2).pack(pady=2)
-        self.lbl_info2 = tk.Label(frame_2, text="Sin selección", fg="gray", wraplength=500)
-        self.lbl_info2.pack(pady=2)
+        # Process button
+        tk.Button(
+            self.root, 
+            text="⚡ PROCESAR COMPARACIÓN", 
+            bg="#4CAF50", 
+            fg="white",
+            font=("Arial", 11, "bold"), 
+            command=self._comparar, 
+            height=2
+        ).pack(pady=15, fill="x", padx=50)
 
-        # Carpeta de Salida
-        frame_salida = tk.Frame(frame_seleccion, relief="groove", bd=2)
-        frame_salida.pack(fill="x", pady=5)
-        tk.Label(frame_salida, text="Carpeta de Salida:", font=("Arial", 9, "bold")).pack(anchor="w", padx=5, pady=2)
-        tk.Button(frame_salida, text="📂 Seleccionar Carpeta", command=self.seleccionar_carpeta_salida).pack(pady=2)
-        self.lbl_info_salida = tk.Label(frame_salida, text="Sin selección", fg="gray", wraplength=500)
-        self.lbl_info_salida.pack(pady=2)
-
-        # Botón de procesamiento
-        tk.Button(self.root, text="⚡ PROCESAR COMPARACIÓN", bg="#4CAF50", fg="white", 
-                  font=("Arial", 11, "bold"), command=self.comparar, height=2).pack(pady=15, fill="x", padx=50)
-
-        # Barra de progreso y estado
+        # Progress frame
         frame_progreso = tk.Frame(self.root)
         frame_progreso.pack(fill="x", padx=20, pady=5)
         
         self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(frame_progreso, variable=self.progress_var, maximum=100, length=400)
+        self.progress_bar = ttk.Progressbar(
+            frame_progreso, 
+            variable=self.progress_var, 
+            maximum=100, 
+            length=400
+        )
         self.progress_bar.pack(side="left", padx=5)
         
         self.status_label = tk.Label(frame_progreso, text="Listo", anchor="w")
         self.status_label.pack(side="left", padx=5, fill="x", expand=True)
 
-    def verificar_pymupdf(self):
-        """Verifica PyMuPDF usando la función importada."""
-        def check():
+    def _crear_frame_archivo(
+        self, 
+        parent: tk.Frame, 
+        label_text: str, 
+        button_text: str,
+        command: callable,
+        label_attr: str
+    ) -> None:
+        """Create a file/folder selection frame."""
+        frame = tk.Frame(parent, relief="groove", bd=2)
+        frame.pack(fill="x", pady=5)
+        
+        tk.Label(frame, text=label_text, font=("Arial", 9, "bold")).pack(anchor="w", padx=5, pady=2)
+        tk.Button(frame, text=button_text, command=command).pack(pady=2)
+        
+        label = tk.Label(frame, text="Sin selección", fg="gray", wraplength=500)
+        label.pack(pady=2)
+        setattr(self, label_attr, label)
+
+    def _verificar_pymupdf(self) -> None:
+        """Verify PyMuPDF availability in background thread."""
+        def check() -> None:
             self.pymupdf_disponible = fc.verificar_pymupdf_disponible()
-            if self.pymupdf_disponible:
-                self.root.after(0, lambda: self.status_label.config(text="✓ PyMuPDF disponible"))
-            else:
-                self.root.after(0, lambda: self.status_label.config(text="⚠️ PyMuPDF no detectado"))
+            msg = "✓ PyMuPDF disponible" if self.pymupdf_disponible else "⚠️ PyMuPDF no detectado"
+            self.root.after(0, lambda: self.status_label.config(text=msg))
+            
+            if not self.pymupdf_disponible:
                 self.root.after(0, lambda: messagebox.showerror(
-                    "Error Crítico", 
+                    "Error Crítico",
                     "PyMuPDF no está instalado.\nInstálalo con: pip install PyMuPDF"
                 ))
+        
         threading.Thread(target=check, daemon=True).start()
 
-    def seleccionar_pdf_1(self):
-        # Quitar topmost temporalmente para permitir que el diálogo esté encima
+    def _seleccionar_archivo_pdf(self, variable: tk.StringVar, label: tk.Label, title: str) -> None:
+        """Generic method for PDF file selection."""
         self.root.attributes('-topmost', False)
         archivo = filedialog.askopenfilename(
-            title="Seleccionar PDF Original",
+            title=title,
             filetypes=[("Archivos PDF", "*.pdf")]
         )
-        # Restaurar ventana encima después del diálogo
         self.root.lift()
         self.root.focus_force()
+        
         if archivo:
-            self.ruta_pdf1.set(archivo)
-            self.lbl_info1.config(text=f"...{archivo[-45:]}", fg="blue")
+            variable.set(archivo)
+            # Show truncated path
+            display_text = f"...{archivo[-45:]}" if len(archivo) > 45 else archivo
+            label.config(text=display_text, fg="blue")
 
-    def seleccionar_pdf_2(self):
-        # Quitar topmost temporalmente para permitir que el diálogo esté encima
-        self.root.attributes('-topmost', False)
-        archivo = filedialog.askopenfilename(
-            title="Seleccionar PDF Nuevo",
-            filetypes=[("Archivos PDF", "*.pdf")]
+    def _seleccionar_pdf_1(self) -> None:
+        """Open dialog to select the original PDF."""
+        self._seleccionar_archivo_pdf(
+            self.ruta_pdf1, 
+            self.lbl_info1, 
+            "Seleccionar PDF Original"
         )
-        # Restaurar ventana encima después del diálogo
-        self.root.lift()
-        self.root.focus_force()
-        if archivo:
-            self.ruta_pdf2.set(archivo)
-            self.lbl_info2.config(text=f"...{archivo[-45:]}", fg="blue")
 
-    def seleccionar_carpeta_salida(self):
-        # Quitar topmost temporalmente para permitir que el diálogo esté encima
+    def _seleccionar_pdf_2(self) -> None:
+        """Open dialog to select the new PDF."""
+        self._seleccionar_archivo_pdf(
+            self.ruta_pdf2, 
+            self.lbl_info2, 
+            "Seleccionar PDF Nuevo"
+        )
+
+    def _seleccionar_carpeta_salida(self) -> None:
+        """Open dialog to select output folder."""
         self.root.attributes('-topmost', False)
         carpeta = filedialog.askdirectory(title="Seleccionar carpeta de salida")
-        # Restaurar ventana encima después del diálogo
         self.root.lift()
         self.root.focus_force()
+        
         if carpeta:
             self.ruta_salida.set(carpeta)
-            self.lbl_info_salida.config(text=f"...{carpeta[-45:]}", fg="blue")
+            display_text = f"...{carpeta[-45:]}" if len(carpeta) > 45 else carpeta
+            self.lbl_info_salida.config(text=display_text, fg="blue")
 
-    def comparar(self):
+    def _comparar(self) -> None:
+        """Execute the PDF comparison."""
         if self.procesando:
             return
         
@@ -135,6 +182,7 @@ class AppComparadorArchivos:
         p2 = self.ruta_pdf2.get()
         salida = self.ruta_salida.get()
         
+        # Validation
         if not p1 or not p2:
             messagebox.showwarning("Atención", "Selecciona ambos archivos primero.")
             return
@@ -151,14 +199,13 @@ class AppComparadorArchivos:
             messagebox.showerror("Error", "PyMuPDF no disponible.\nInstálalo con: pip install PyMuPDF")
             return
         
-        if not os.path.exists(salida):
-            os.makedirs(salida)
+        os.makedirs(salida, exist_ok=True)
         
         self.procesando = True
         self.progress_var.set(0)
         self.status_label.config(text="Procesando comparación...")
         
-        # Crear registro_match directamente sin detección de patrones
+        # Create match record
         registro_match = {
             'origen': {
                 'clave': os.path.basename(p1),
@@ -174,25 +221,26 @@ class AppComparadorArchivos:
             'similitud_pct': '100%'
         }
         
-        def worker():
-            def cb_prog(nombre):
+        def worker() -> None:
+            def cb_prog(nombre: str) -> None:
                 self.root.after(0, lambda: self.progress_var.set(100))
             
-            def cb_estado(msg):
+            def cb_estado(msg: str) -> None:
                 self.root.after(0, lambda: self.status_label.config(text=msg))
             
-            res = fc.procesar_par_de_archivos(
+            resultado = fc.procesar_par_de_archivos(
                 registro_match,
                 salida,
                 callback_progreso=cb_prog,
                 callback_estado=cb_estado
             )
             
-            self.root.after(0, lambda: self.finalizar(res, salida))
+            self.root.after(0, lambda: self._finalizar(resultado, salida))
         
         threading.Thread(target=worker, daemon=True).start()
 
-    def finalizar(self, exitoso, ruta):
+    def _finalizar(self, exitoso: bool, ruta: str) -> None:
+        """Finalize processing and show result."""
         self.procesando = False
         self.progress_var.set(100)
         
@@ -203,8 +251,8 @@ class AppComparadorArchivos:
             self.status_label.config(text="✗ Error al procesar.")
             messagebox.showerror("Error", "No se pudo completar la comparación.")
 
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = AppComparadorArchivos(root)
     root.mainloop()
-

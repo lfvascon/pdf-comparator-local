@@ -1,20 +1,16 @@
-# Dependencias para el Comparador de PDFs
-# Instalar con: pip install -r requirements.txt
+# PDF Comparator Dependencies
+# Install with: pip install -r requirements.txt
 
-# Procesamiento de PDFs (reemplaza Poppler)
+# Core PDF Processing (replaces Poppler)
 PyMuPDF>=1.23.0
 
-# Procesamiento de imágenes
+# Image Processing
 opencv-python>=4.8.0
 Pillow>=10.0.0
 numpy>=1.24.0
 
-# Procesamiento paralelo
+# Parallel Processing
 joblib>=1.3.0
 
-# Interfaz gráfica (incluido en Python estándar, pero listado para referencia)
-# tkinter - incluido en Python estándar
-
-# Opcional: para lectura de PDFs como fallback
+# Optional: PDF reading fallback
 PyPDF2>=3.0.0
-
