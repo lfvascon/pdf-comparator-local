@@ -4,13 +4,19 @@ import os
 import gc
 import difflib
 import sys
-import shutil
-import subprocess
 from pathlib import Path
-from pdf2image import convert_from_path
 from PIL import Image
 from joblib import Parallel, delayed
 import multiprocessing
+
+# PyMuPDF (fitz) - Librería Python pura para trabajar con PDFs
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+    print("⚠️  ADVERTENCIA: PyMuPDF no está instalado.")
+    print("   Instálalo con: pip install PyMuPDF")
 
 # ==========================================
 # 1. CONFIGURACIÓN GLOBAL
@@ -18,10 +24,8 @@ import multiprocessing
 
 Image.MAX_IMAGE_PIXELS = None
 
-# --- ⬇️⬇️⬇️ CONFIGURA TU RUTA DE POPPLER AQUÍ ⬇️⬇️⬇️ ---
-# Si ya lo tienes en el PATH de Windows, puedes dejarlo como None o vacío.
-POPPLER_PATH_MANUAL = r"C:\Users\lfvasconez\OneDrive - ACCIONA S.A\FAB\2025\12. Diciembre\4. pdf compare\app pdf compare\poppler-25.12.0\Library\bin"
-# --------------------------------------------------------
+# DPI por defecto para conversión de PDF a imagen (300 = alta calidad)
+DPI_DEFAULT = 300
 
 def get_base_path():
     """Obtiene la ruta base correcta, ya sea desde script o ejecutable."""
@@ -30,25 +34,12 @@ def get_base_path():
     else:
         return Path(__file__).parent
 
-def verificar_poppler_disponible():
+def verificar_pymupdf_disponible():
     """
-    Verifica si Poppler está disponible en la ruta manual o en el sistema.
-    Retorna la ruta válida o None.
+    Verifica si PyMuPDF está disponible.
+    Retorna True si está disponible, False en caso contrario.
     """
-    # 1. Verificar ruta manual configurada
-    if POPPLER_PATH_MANUAL:
-        ruta = Path(POPPLER_PATH_MANUAL)
-        if ruta.exists() and ruta.is_dir():
-            ejecutable = ruta / 'pdftoppm.exe'
-            if ejecutable.exists():
-                return str(ruta)
-    
-    # 2. Intentar buscar en el PATH del sistema
-    pdftoppm_path = shutil.which('pdftoppm')
-    if pdftoppm_path:
-        return str(Path(pdftoppm_path).parent)
-        
-    return None
+    return PYMUPDF_AVAILABLE
 
 # ==========================================
 # 2. LÓGICA DE TEXTO Y ARCHIVOS
@@ -283,33 +274,101 @@ def procesar_hoja_premium(img_base_pil, img_move_pil, index):
     except:
         return None
 
-def obtener_numero_paginas(pdf_path, poppler_path):
-    # 1. Intentar con pdfinfo (rápido)
-    try:
-        pdfinfo = Path(poppler_path) / 'pdfinfo.exe'
-        if pdfinfo.exists():
-            res = subprocess.run([str(pdfinfo), pdf_path], capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform=='win32' else 0)
-            if res.returncode == 0:
-                for line in res.stdout.split('\n'):
-                    if 'Pages:' in line: return int(line.split(':')[1].strip())
-    except: pass
+def obtener_numero_paginas(pdf_path):
+    """
+    Obtiene el número de páginas de un PDF usando PyMuPDF.
     
-    # 2. PyPDF2
-    try:
-        import PyPDF2
-        with open(pdf_path, 'rb') as f: return len(PyPDF2.PdfReader(f).pages)
-    except: pass
+    Args:
+        pdf_path: Ruta al archivo PDF
     
-    # 3. Fallback: pdf2image (lento)
+    Returns:
+        Número de páginas o 1 si hay error
+    """
+    if not PYMUPDF_AVAILABLE:
+        # Fallback a PyPDF2 si PyMuPDF no está disponible
+        try:
+            import PyPDF2
+            with open(pdf_path, 'rb') as f:
+                return len(PyPDF2.PdfReader(f).pages)
+        except:
+            return 1
+    
     try:
-        pages = convert_from_path(pdf_path, dpi=10, poppler_path=poppler_path)
-        c = len(pages)
-        del pages
-        gc.collect()
-        return c
-    except: return 1
+        doc = fitz.open(pdf_path)
+        num_pages = len(doc)
+        doc.close()
+        return num_pages
+    except Exception:
+        # Fallback a PyPDF2
+        try:
+            import PyPDF2
+            with open(pdf_path, 'rb') as f:
+                return len(PyPDF2.PdfReader(f).pages)
+        except:
+            return 1
 
-def procesar_par_de_archivos(registro_match, poppler_path, carpeta_salida, callback_progreso=None, callback_estado=None):
+def pdf_a_imagenes(pdf_path, dpi=DPI_DEFAULT, first_page=None, last_page=None):
+    """
+    Convierte páginas de un PDF a imágenes PIL usando PyMuPDF.
+    
+    Args:
+        pdf_path: Ruta al archivo PDF
+        dpi: Resolución en DPI (por defecto 300)
+        first_page: Primera página a convertir (1-indexed, None = primera)
+        last_page: Última página a convertir (1-indexed, None = última)
+    
+    Returns:
+        Lista de objetos PIL.Image
+    """
+    if not PYMUPDF_AVAILABLE:
+        raise ImportError("PyMuPDF no está instalado. Instálalo con: pip install PyMuPDF")
+    
+    try:
+        doc = fitz.open(pdf_path)
+        imagenes = []
+        
+        # Ajustar índices (PyMuPDF usa 0-indexed, pero la función usa 1-indexed)
+        start_idx = (first_page - 1) if first_page else 0
+        end_idx = (last_page - 1) if last_page else (len(doc) - 1)
+        
+        # Calcular matriz de zoom basada en DPI
+        # PyMuPDF usa 72 DPI por defecto, así que necesitamos escalar
+        zoom = dpi / 72.0
+        mat = fitz.Matrix(zoom, zoom)
+        
+        for page_num in range(start_idx, min(end_idx + 1, len(doc))):
+            page = doc[page_num]
+            # Renderizar página a imagen
+            pix = page.get_pixmap(matrix=mat)
+            # Convertir a PIL Image
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            imagenes.append(img)
+            pix = None  # Liberar memoria
+        
+        doc.close()
+        return imagenes
+    except Exception as e:
+        raise Exception(f"Error al convertir PDF a imágenes: {e}")
+
+def procesar_par_de_archivos(registro_match, carpeta_salida, callback_progreso=None, callback_estado=None, dpi=DPI_DEFAULT):
+    """
+    Procesa un par de archivos PDF y genera un PDF comparativo.
+    
+    Args:
+        registro_match: Diccionario con información de los archivos a comparar
+        carpeta_salida: Carpeta donde guardar el resultado
+        callback_progreso: Función callback para actualizar progreso
+        callback_estado: Función callback para actualizar estado
+        dpi: Resolución para la conversión (por defecto 300)
+    
+    Returns:
+        True si fue exitoso, False en caso contrario
+    """
+    if not PYMUPDF_AVAILABLE:
+        if callback_estado:
+            callback_estado("❌ PyMuPDF no está instalado. Instálalo con: pip install PyMuPDF")
+        return False
+    
     ruta_original = registro_match['origen']['ruta']
     ruta_nueva = registro_match['destino']['ruta']
     nombre_base = os.path.basename(ruta_original)
@@ -322,8 +381,8 @@ def procesar_par_de_archivos(registro_match, poppler_path, carpeta_salida, callb
     try:
         if callback_estado: callback_estado(f"📊 Analizando: {nombre_base[:40]}...")
         
-        n_a = obtener_numero_paginas(ruta_original, poppler_path)
-        n_b = obtener_numero_paginas(ruta_nueva, poppler_path)
+        n_a = obtener_numero_paginas(ruta_original)
+        n_b = obtener_numero_paginas(ruta_nueva)
         max_pages = max(n_a, n_b)
         
         TAMANO_LOTE = 5
@@ -333,12 +392,18 @@ def procesar_par_de_archivos(registro_match, poppler_path, carpeta_salida, callb
             lote_fin = min(lote_inicio + TAMANO_LOTE - 1, max_pages)
             if callback_estado: callback_estado(f"📄 Pág {lote_inicio}-{lote_fin}/{max_pages}: {nombre_base[:30]}...")
             
-            # Cargar lote
-            try: pages_a = convert_from_path(ruta_original, dpi=300, poppler_path=poppler_path, first_page=lote_inicio, last_page=lote_fin, thread_count=1)
-            except: pages_a = []
+            # Cargar lote usando PyMuPDF
+            try:
+                pages_a = pdf_a_imagenes(ruta_original, dpi=dpi, first_page=lote_inicio, last_page=lote_fin)
+            except Exception as e:
+                if callback_estado: callback_estado(f"⚠️  Error en archivo original: {str(e)[:30]}")
+                pages_a = []
             
-            try: pages_b = convert_from_path(ruta_nueva, dpi=300, poppler_path=poppler_path, first_page=lote_inicio, last_page=lote_fin, thread_count=1)
-            except: pages_b = []
+            try:
+                pages_b = pdf_a_imagenes(ruta_nueva, dpi=dpi, first_page=lote_inicio, last_page=lote_fin)
+            except Exception as e:
+                if callback_estado: callback_estado(f"⚠️  Error en archivo nuevo: {str(e)[:30]}")
+                pages_b = []
             
             # Normalizar lote
             lote_size = max(len(pages_a), len(pages_b))

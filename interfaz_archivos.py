@@ -19,13 +19,13 @@ class AppComparadorArchivos:
         self.ruta_pdf1 = tk.StringVar()
         self.ruta_pdf2 = tk.StringVar()
         self.ruta_salida = tk.StringVar()
-        self.poppler_path = None
+        self.pymupdf_disponible = False
         self.procesando = False
 
         self.crear_widgets()
         
-        # Verificar Poppler al iniciar
-        self.verificar_poppler()
+        # Verificar PyMuPDF al iniciar
+        self.verificar_pymupdf()
 
     def crear_widgets(self):
         # Título
@@ -74,17 +74,17 @@ class AppComparadorArchivos:
         self.status_label = tk.Label(frame_progreso, text="Listo", anchor="w")
         self.status_label.pack(side="left", padx=5, fill="x", expand=True)
 
-    def verificar_poppler(self):
-        """Verifica Poppler usando la función importada."""
+    def verificar_pymupdf(self):
+        """Verifica PyMuPDF usando la función importada."""
         def check():
-            self.poppler_path = fc.verificar_poppler_disponible()
-            if self.poppler_path:
-                self.root.after(0, lambda: self.status_label.config(text="✓ Poppler detectado"))
+            self.pymupdf_disponible = fc.verificar_pymupdf_disponible()
+            if self.pymupdf_disponible:
+                self.root.after(0, lambda: self.status_label.config(text="✓ PyMuPDF disponible"))
             else:
-                self.root.after(0, lambda: self.status_label.config(text="⚠️ Poppler no detectado"))
+                self.root.after(0, lambda: self.status_label.config(text="⚠️ PyMuPDF no detectado"))
                 self.root.after(0, lambda: messagebox.showerror(
                     "Error Crítico", 
-                    "No se encontró Poppler.\nEdita 'funciones_comparador.py' y corrige la variable POPPLER_PATH_MANUAL."
+                    "PyMuPDF no está instalado.\nInstálalo con: pip install PyMuPDF"
                 ))
         threading.Thread(target=check, daemon=True).start()
 
@@ -147,8 +147,8 @@ class AppComparadorArchivos:
             messagebox.showerror("Error", "Uno o ambos archivos no existen.")
             return
         
-        if not self.poppler_path:
-            messagebox.showerror("Error", "Poppler no disponible.")
+        if not self.pymupdf_disponible:
+            messagebox.showerror("Error", "PyMuPDF no disponible.\nInstálalo con: pip install PyMuPDF")
             return
         
         if not os.path.exists(salida):
@@ -183,7 +183,6 @@ class AppComparadorArchivos:
             
             res = fc.procesar_par_de_archivos(
                 registro_match,
-                self.poppler_path,
                 salida,
                 callback_progreso=cb_prog,
                 callback_estado=cb_estado
