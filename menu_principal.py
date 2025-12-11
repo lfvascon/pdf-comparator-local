@@ -106,6 +106,7 @@ class MainMenu:
             return
 
         ventana = tk.Toplevel(self.root)
+        ventana.resizable(True, True)  # Enable maximize and minimize buttons
         ventana.transient(self.root)
         ventana.lift()
         ventana.focus_force()
@@ -122,6 +123,7 @@ class MainMenu:
             return
 
         ventana = tk.Toplevel(self.root)
+        ventana.resizable(True, True)  # Enable maximize and minimize buttons
         ventana.transient(self.root)
         ventana.lift()
         ventana.focus_force()

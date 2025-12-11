@@ -25,7 +25,7 @@ class AppComparador:
         self.root = root
         self.root.title("Comparador de PDFs - Interfaz Completa")
         
-        # Configure window size
+        # Configure window - MUST be done first
         self._configure_window()
         
         # State variables
@@ -39,18 +39,19 @@ class AppComparador:
 
         self._crear_widgets()
         self._verificar_pymupdf()
+        
+        # Update layout after widgets are created
+        self.root.update_idletasks()
 
     def _configure_window(self) -> None:
-        """Configure window size based on platform."""
+        """Configure window size and properties."""
         # Enable maximize and minimize buttons
         self.root.resizable(True, True)
-        # Set initial size
-        self.root.geometry("1200x700")
-        # Maximize after a short delay to ensure layout is correct
-        self.root.after(100, self._maximize_window)
+        # Maximize window to full screen
+        self.root.after_idle(self._maximize_to_fullscreen)
     
-    def _maximize_window(self) -> None:
-        """Maximize window after layout is complete."""
+    def _maximize_to_fullscreen(self) -> None:
+        """Maximize window to full screen after layout is complete."""
         if sys.platform == 'win32':
             self.root.state('zoomed')
         else:
@@ -59,45 +60,91 @@ class AppComparador:
         self.root.update_idletasks()
 
     def _crear_widgets(self) -> None:
-        """Create and layout all GUI widgets."""
-        # Create frames in order: top, middle (expandable), bottom (fixed)
+        """Create and layout all GUI widgets using grid for better control."""
+        # Configure root grid weights
+        self.root.grid_rowconfigure(1, weight=1)  # Middle row expands
+        self.root.grid_columnconfigure(0, weight=1)
+        
+        # Top frame (row 0) - contains folder selection AND progress/button
         self._crear_frame_superior()
+        
+        # Middle frame (row 1) - expandable table
         self._crear_frame_tabla()
-        # Bottom frame must be created last and packed with side="bottom"
-        self._crear_frame_inferior()
 
     def _crear_frame_superior(self) -> None:
-        """Create the top frame with folder selection inputs."""
+        """Create the top frame with folder selection inputs and progress/process controls."""
         frame_top = tk.Frame(self.root, pady=10)
-        frame_top.pack(fill="x", padx=10)
+        frame_top.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
+        frame_top.grid_columnconfigure(0, weight=1)  # Left side expands
+        frame_top.grid_columnconfigure(1, weight=0)  # Right side fixed
+
+        # Left side: Folder selection
+        frame_left = tk.Frame(frame_top)
+        frame_left.grid(row=0, column=0, sticky="w", padx=(0, 20))
 
         # Row configuration
         labels = ["Carpeta Origen:", "Carpeta Destino:", "Guardar Resultados en:"]
         variables = [self.ruta_base, self.ruta_cambio, self.ruta_salida]
 
         for row, (label_text, var) in enumerate(zip(labels, variables)):
-            tk.Label(frame_top, text=label_text).grid(row=row, column=0, padx=5, sticky="w")
-            tk.Entry(frame_top, textvariable=var, width=70).grid(row=row, column=1, padx=5)
+            tk.Label(frame_left, text=label_text).grid(row=row, column=0, padx=5, sticky="w")
+            tk.Entry(frame_left, textvariable=var, width=50).grid(row=row, column=1, padx=5)
             tk.Button(
-                frame_top, 
+                frame_left, 
                 text="📂", 
                 command=lambda v=var: self._seleccionar_carpeta(v)
             ).grid(row=row, column=2)
 
         # Analyze button
         tk.Button(
-            frame_top, 
+            frame_left, 
             text="🔍 ANALIZAR COINCIDENCIAS", 
             bg="#4CAF50", 
             fg="white",
             font=("Arial", 10, "bold"), 
             command=self._ejecutar_analisis
-        ).grid(row=3, column=0, columnspan=3, pady=10)
+        ).grid(row=3, column=0, columnspan=3, pady=10, sticky="w")
+
+        # Right side: Progress bar and process button
+        frame_right = tk.Frame(frame_top)
+        frame_right.grid(row=0, column=1, sticky="ne", padx=10)
+
+        # Progress bar and status
+        progress_frame = tk.Frame(frame_right)
+        progress_frame.pack(fill="x", pady=5)
+
+        self.progress_var = tk.DoubleVar()
+        self.progress_bar = ttk.Progressbar(
+            progress_frame, 
+            variable=self.progress_var, 
+            maximum=100, 
+            length=300,
+            mode='determinate'
+        )
+        self.progress_bar.pack(side="top", pady=2)
+
+        self.status_label = tk.Label(progress_frame, text="Listo", anchor="w", font=("Arial", 9))
+        self.status_label.pack(side="top", fill="x")
+
+        # Process button
+        tk.Button(
+            frame_right, 
+            text="✅ PROCESAR PDFs", 
+            bg="#2196F3", 
+            fg="white",
+            font=("Arial", 11, "bold"), 
+            command=self._procesar_pdfs, 
+            pady=8,
+            width=18,
+            cursor="hand2"
+        ).pack(side="top", pady=5)
 
     def _crear_frame_tabla(self) -> None:
         """Create the central frame with results table."""
         frame_tabla = tk.Frame(self.root)
-        frame_tabla.pack(fill="both", expand=True, padx=10, pady=5, before=None)
+        frame_tabla.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+        frame_tabla.grid_rowconfigure(0, weight=1)
+        frame_tabla.grid_columnconfigure(0, weight=1)
 
         columns = ("origen", "destino", "similitud")
         self.tree = ttk.Treeview(frame_tabla, columns=columns, show="headings")
@@ -122,45 +169,12 @@ class AppComparador:
         scrollbar = ttk.Scrollbar(frame_tabla, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
         
-        self.tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
 
         # Double-click event
         self.tree.bind("<Double-1>", self._abrir_editor)
 
-    def _crear_frame_inferior(self) -> None:
-        """Create the bottom frame with progress bar and process button."""
-        frame_bottom = tk.Frame(self.root)
-        frame_bottom.pack(fill="x", padx=10, pady=5, side="bottom")
-
-        # Left side: Progress bar and status
-        left_frame = tk.Frame(frame_bottom)
-        left_frame.pack(side="left", fill="x", expand=True, padx=5)
-
-        self.progress_var = tk.DoubleVar()
-        self.progress_bar = ttk.Progressbar(
-            left_frame, 
-            variable=self.progress_var, 
-            maximum=100, 
-            length=400,
-            mode='determinate'
-        )
-        self.progress_bar.pack(side="left", padx=5)
-
-        self.status_label = tk.Label(left_frame, text="Listo", anchor="w")
-        self.status_label.pack(side="left", padx=5, fill="x", expand=True)
-
-        # Right side: Process button
-        tk.Button(
-            frame_bottom, 
-            text="✅ PROCESAR PDFs", 
-            bg="#2196F3", 
-            fg="white",
-            font=("Arial", 11, "bold"), 
-            command=self._procesar_pdfs, 
-            pady=5,
-            width=20
-        ).pack(side="right", padx=5)
 
     def _verificar_pymupdf(self) -> None:
         """Verify PyMuPDF availability in background thread."""

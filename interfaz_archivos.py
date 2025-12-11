@@ -18,8 +18,7 @@ class AppComparadorArchivos:
     def __init__(self, root: tk.Tk | tk.Toplevel) -> None:
         self.root = root
         self.root.title("Comparación de Archivos PDF (Modo Individual)")
-        self.root.geometry("550x450")
-        self.root.resizable(True, True)  # Enable maximize and minimize buttons
+        self.root.resizable(True, True)
         
         # State variables
         self.ruta_pdf1 = tk.StringVar()
@@ -30,6 +29,18 @@ class AppComparadorArchivos:
 
         self._crear_widgets()
         self._verificar_pymupdf()
+        
+        # Maximize to full screen after widgets are created
+        self.root.after_idle(self._maximize_to_fullscreen)
+    
+    def _maximize_to_fullscreen(self) -> None:
+        """Maximize window to full screen."""
+        import sys
+        if sys.platform == 'win32':
+            self.root.state('zoomed')
+        else:
+            self.root.attributes('-zoomed', True)
+        self.root.update_idletasks()
 
     def _crear_widgets(self) -> None:
         """Create and layout all GUI widgets."""
