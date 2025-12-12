@@ -23,7 +23,7 @@ class AppComparador:
     
     def __init__(self, root: tk.Tk | tk.Toplevel) -> None:
         self.root = root
-        self.root.title("Comparador de PDFs - Interfaz Completa")
+        self.root.title("Comparador de PDFs - Interfaz Carpetas")
         
         # Configure window - MUST be done first
         self._configure_window()

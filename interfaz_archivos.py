@@ -17,7 +17,7 @@ class AppComparadorArchivos:
     
     def __init__(self, root: tk.Tk | tk.Toplevel) -> None:
         self.root = root
-        self.root.title("Comparación de Archivos PDF (Modo Individual)")
+        self.root.title("Comparador de PDFs - Interfaz Archivos")
         self.root.resizable(True, True)
         
         # State variables
