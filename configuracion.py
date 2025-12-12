@@ -17,21 +17,24 @@ class ConfiguracionApp:
     """Application configuration with default values."""
     
     # PDF to Image conversion
-    dpi: int = 300
+    dpi: int = 200
     
     # Batch processing
     batch_size: int = 5
     
     # Image comparison
-    min_contour_area: int = 5
+    min_contour_area: int = 15
+    usar_blur: bool = True
+    umbral_bin: int = 50
+    kernel_size: int = 3
+    iteraciones: int = 2
     
     # File matching
     similarity_threshold: float = 0.5
     
     # Image alignment
-    orb_max_features: int = 10000
-    match_ratio: float = 0.20
-    min_matches_homography: int = 4
+    orb_max_features: int = 20000
+    min_matches_homography: int = 20
 
     def to_dict(self) -> dict[str, Any]:
         """Convert configuration to dictionary."""
@@ -92,13 +95,13 @@ CONFIG_OPTIONS = {
     "dpi": {
         "label": "Resolución (DPI)",
         "description": "Calidad de conversión PDF → Imagen.\n"
-                      "• 150: Rápido, archivos pequeños, calidad media\n"
-                      "• 200: Balance velocidad/calidad\n"
-                      "• 300: Alta calidad (recomendado)\n"
+                      "• 150: Rápido, archivos pequeños\n"
+                      "• 200: Balance velocidad/calidad (recomendado para planos)\n"
+                      "• 300: Alta calidad (texto nítido)\n"
                       "• 450: Muy alta calidad, más lento\n"
                       "• 600: Máxima calidad, muy lento",
         "values": [150, 200, 300, 450, 600],
-        "default": 300,
+        "default": 200,
         "type": "combo"
     },
     "batch_size": {
@@ -114,15 +117,57 @@ CONFIG_OPTIONS = {
         "type": "combo"
     },
     "min_contour_area": {
-        "label": "Sensibilidad de Detección",
-        "description": "Área mínima para detectar cambios.\n"
-                      "• 2: Muy sensible (detecta todo, incluye ruido)\n"
-                      "• 5: Sensible (recomendado)\n"
-                      "• 10: Normal\n"
-                      "• 20: Baja sensibilidad\n"
+        "label": "Área Mínima de Detección",
+        "description": "Tamaño mínimo de mancha a detectar.\n"
+                      "• 4: Muy sensible (detecta puntos/comas)\n"
+                      "• 10: Sensible\n"
+                      "• 15: Balance (recomendado para planos)\n"
+                      "• 20: Baja sensibilidad (ignora ruido)\n"
                       "• 50: Solo cambios grandes",
-        "values": [2, 5, 10, 20, 50],
-        "default": 5,
+        "values": [4, 10, 15, 20, 50],
+        "default": 15,
+        "type": "combo"
+    },
+    "usar_blur": {
+        "label": "Usar Blur",
+        "description": "Aplicar desenfoque para unir líneas rotas.\n"
+                      "• Sí: Unir líneas (recomendado para planos)\n"
+                      "• No: Nitidez (útil para texto)",
+        "values": [True, False],
+        "display_values": ["Sí", "No"],
+        "default": True,
+        "type": "combo"
+    },
+    "umbral_bin": {
+        "label": "Umbral de Binarización",
+        "description": "Sensibilidad al negro en la imagen.\n"
+                      "• 50: Muy sensible (recomendado para planos)\n"
+                      "• 100: Balance (texto)\n"
+                      "• 150: Menos sensible\n"
+                      "• 200: Solo negro muy oscuro",
+        "values": [50, 100, 150, 200],
+        "default": 50,
+        "type": "combo"
+    },
+    "kernel_size": {
+        "label": "Tamaño de Kernel",
+        "description": "Tamaño de tolerancia para la dilatación.\n"
+                      "• 2: Precisión (texto)\n"
+                      "• 3: Balance (recomendado para planos)\n"
+                      "• 4: Más tolerante\n"
+                      "• 5: Muy tolerante",
+        "values": [2, 3, 4, 5],
+        "default": 3,
+        "type": "combo"
+    },
+    "iteraciones": {
+        "label": "Iteraciones de Dilatación",
+        "description": "Fuerza de la dilatación.\n"
+                      "• 1: Precisión\n"
+                      "• 2: Permisivo (recomendado para planos)\n"
+                      "• 3: Muy tolerante",
+        "values": [1, 2, 3],
+        "default": 2,
         "type": "combo"
     },
     "similarity_threshold": {
@@ -141,38 +186,25 @@ CONFIG_OPTIONS = {
     "orb_max_features": {
         "label": "Puntos de Alineación",
         "description": "Puntos de referencia para alinear páginas.\n"
-                      "• 5000: Rápido, menos preciso\n"
-                      "• 10000: Balance (recomendado)\n"
-                      "• 15000: Más preciso\n"
-                      "• 20000: Alta precisión, lento\n"
+                      "• 10000: Rápido, menos preciso\n"
+                      "• 15000: Balance\n"
+                      "• 20000: Alta precisión (recomendado)\n"
+                      "• 25000: Muy alta precisión\n"
                       "• 30000: Máxima precisión, muy lento",
-        "values": [5000, 10000, 15000, 20000, 30000],
-        "default": 10000,
-        "type": "combo"
-    },
-    "match_ratio": {
-        "label": "Ratio de Coincidencias",
-        "description": "Porcentaje de puntos usados para alinear.\n"
-                      "• 10%: Solo los mejores, más preciso\n"
-                      "• 15%: Conservador\n"
-                      "• 20%: Balance (recomendado)\n"
-                      "• 30%: Más robusto\n"
-                      "• 40%: Muy robusto",
-        "values": [0.10, 0.15, 0.20, 0.30, 0.40],
-        "display_values": ["10%", "15%", "20%", "30%", "40%"],
-        "default": 0.20,
+        "values": [10000, 15000, 20000, 25000, 30000],
+        "default": 20000,
         "type": "combo"
     },
     "min_matches_homography": {
         "label": "Mínimo de Coincidencias",
         "description": "Puntos mínimos para calcular alineación.\n"
-                      "• 4: Mínimo matemático (recomendado)\n"
-                      "• 6: Más robusto\n"
-                      "• 8: Conservador\n"
-                      "• 10: Estricto\n"
-                      "• 15: Muy estricto",
-        "values": [4, 6, 8, 10, 15],
-        "default": 4,
+                      "• 10: Menos estricto\n"
+                      "• 15: Balance\n"
+                      "• 20: Robusto (recomendado)\n"
+                      "• 25: Muy robusto\n"
+                      "• 30: Estricto",
+        "values": [10, 15, 20, 25, 30],
+        "default": 20,
         "type": "combo"
     }
 }
@@ -247,10 +279,11 @@ class InterfazConfiguracion:
         
         # Create config sections
         self._crear_seccion(main_frame, "📄 Conversión PDF", ["dpi", "batch_size"])
-        self._crear_seccion(main_frame, "🔍 Detección de Cambios", ["min_contour_area"])
+        self._crear_seccion(main_frame, "🔍 Detección de Cambios", 
+                           ["min_contour_area", "usar_blur", "umbral_bin", "kernel_size", "iteraciones"])
         self._crear_seccion(main_frame, "📁 Emparejamiento de Archivos", ["similarity_threshold"])
         self._crear_seccion(main_frame, "🎯 Alineación de Imágenes", 
-                           ["orb_max_features", "match_ratio", "min_matches_homography"])
+                           ["orb_max_features", "min_matches_homography"])
         
         # Buttons frame (fixed at bottom, outside scroll area)
         frame_botones = tk.Frame(self.root)

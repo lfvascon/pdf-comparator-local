@@ -55,7 +55,7 @@ except ImportError:
 # Configuration getters - use config file if available, otherwise defaults
 def get_dpi() -> int:
     """Get DPI setting."""
-    return get_config().dpi if CONFIG_AVAILABLE else 300
+    return get_config().dpi if CONFIG_AVAILABLE else 200
 
 def get_batch_size() -> int:
     """Get batch size setting."""
@@ -63,7 +63,23 @@ def get_batch_size() -> int:
 
 def get_min_contour_area() -> int:
     """Get minimum contour area setting."""
-    return get_config().min_contour_area if CONFIG_AVAILABLE else 5
+    return get_config().min_contour_area if CONFIG_AVAILABLE else 15
+
+def get_usar_blur() -> bool:
+    """Get blur setting."""
+    return get_config().usar_blur if CONFIG_AVAILABLE else True
+
+def get_umbral_bin() -> int:
+    """Get binary threshold setting."""
+    return get_config().umbral_bin if CONFIG_AVAILABLE else 50
+
+def get_kernel_size() -> int:
+    """Get kernel size setting."""
+    return get_config().kernel_size if CONFIG_AVAILABLE else 3
+
+def get_iteraciones() -> int:
+    """Get dilation iterations setting."""
+    return get_config().iteraciones if CONFIG_AVAILABLE else 2
 
 def get_similarity_threshold() -> float:
     """Get similarity threshold setting."""
@@ -71,15 +87,11 @@ def get_similarity_threshold() -> float:
 
 def get_orb_max_features() -> int:
     """Get ORB max features setting."""
-    return get_config().orb_max_features if CONFIG_AVAILABLE else 10000
-
-def get_match_ratio() -> float:
-    """Get match ratio setting."""
-    return get_config().match_ratio if CONFIG_AVAILABLE else 0.20
+    return get_config().orb_max_features if CONFIG_AVAILABLE else 20000
 
 def get_min_matches_homography() -> int:
     """Get minimum matches for homography setting."""
-    return get_config().min_matches_homography if CONFIG_AVAILABLE else 4
+    return get_config().min_matches_homography if CONFIG_AVAILABLE else 20
 
 
 @dataclass(frozen=True)
@@ -312,7 +324,7 @@ def limpiar_ruido_mascara(mask: np.ndarray, min_area: int | None = None) -> np.n
     
     for cnt in contours:
         if cv2.contourArea(cnt) > min_area:
-            cv2.drawContours(mask_clean, [cnt], -1, Colors.WHITE, -1)
+            cv2.drawContours(mask_clean, [cnt], -1, 255, -1)
     
     return mask_clean
 
@@ -320,6 +332,7 @@ def limpiar_ruido_mascara(mask: np.ndarray, min_area: int | None = None) -> np.n
 def alinear_imagen(img_base: np.ndarray, img_a_mover: np.ndarray) -> np.ndarray:
     """
     Align an image to a base image using ORB feature matching and homography.
+    Uses CLAHE for better feature detection and knnMatch with ratio test.
     
     Args:
         img_base: Reference image
@@ -332,6 +345,11 @@ def alinear_imagen(img_base: np.ndarray, img_a_mover: np.ndarray) -> np.ndarray:
     gray_base = cv2.cvtColor(img_base, cv2.COLOR_RGB2GRAY) if img_base.ndim == 3 else img_base
     gray_move = cv2.cvtColor(img_a_mover, cv2.COLOR_RGB2GRAY) if img_a_mover.ndim == 3 else img_a_mover
 
+    # Apply CLAHE for better feature detection
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray_base = clahe.apply(gray_base)
+    gray_move = clahe.apply(gray_move)
+
     # Feature detection
     orb = cv2.ORB_create(get_orb_max_features())
     keypoints1, descriptors1 = orb.detectAndCompute(gray_move, None)
@@ -342,24 +360,30 @@ def alinear_imagen(img_base: np.ndarray, img_a_mover: np.ndarray) -> np.ndarray:
     if descriptors1 is None or descriptors2 is None:
         return cv2.resize(img_a_mover, target_size)
 
-    # Match features
-    bf = cv2.BFMatcher(cv2.DESCRIPTOR_MATCHER_BRUTEFORCE_HAMMING, crossCheck=True)
-    matches = sorted(bf.match(descriptors1, descriptors2), key=lambda x: x.distance)
-    good_matches = matches[:int(len(matches) * get_match_ratio())]
+    # Match features using knnMatch with ratio test
+    bf = cv2.BFMatcher(cv2.DESCRIPTOR_MATCHER_BRUTEFORCE_HAMMING, crossCheck=False)
+    matches = bf.knnMatch(descriptors1, descriptors2, k=2)
+
+    # Apply ratio test (Lowe's ratio test)
+    good_matches = []
+    for m, n in matches:
+        if m.distance < 0.70 * n.distance:
+            good_matches.append(m)
 
     if len(good_matches) < get_min_matches_homography():
         return cv2.resize(img_a_mover, target_size)
 
     # Calculate homography
-    points1 = np.array([keypoints1[m.queryIdx].pt for m in good_matches], dtype=np.float32)
-    points2 = np.array([keypoints2[m.trainIdx].pt for m in good_matches], dtype=np.float32)
+    src_pts = np.float32([keypoints1[m.queryIdx].pt for m in good_matches]).reshape(-1, 1, 2)
+    dst_pts = np.float32([keypoints2[m.trainIdx].pt for m in good_matches]).reshape(-1, 1, 2)
 
-    h, _ = cv2.findHomography(points1, points2, cv2.RANSAC)
+    h_matrix, _ = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
     
-    if h is None:
+    if h_matrix is None:
         return cv2.resize(img_a_mover, target_size)
     
-    return cv2.warpPerspective(img_a_mover, h, target_size)
+    height, width = img_base.shape[:2]
+    return cv2.warpPerspective(img_a_mover, h_matrix, (width, height))
 
 
 def procesar_hoja_premium(
@@ -369,6 +393,7 @@ def procesar_hoja_premium(
 ) -> Image.Image | None:
     """
     Process a page pair and create a comparison image with differences highlighted.
+    Uses configurable blur, binary threshold, kernel size, and iterations.
     
     Args:
         img_base_pil: Base/original page image
@@ -381,59 +406,67 @@ def procesar_hoja_premium(
     try:
         # Convert PIL to numpy
         img_base_np = np.array(img_base_pil) if img_base_pil else None
-        img_move_np = np.array(img_move_pil) if img_move_pil else None
+        img_move_raw = np.array(img_move_pil) if img_move_pil else None
 
         # Handle missing pages
-        if img_base_np is None and img_move_np is not None:
-            h, w = img_move_np.shape[:2]
-            img_base = np.full((h, w, 3), Colors.WHITE, dtype=np.uint8)
-            img_move_raw = img_move_np
-        elif img_move_np is None and img_base_np is not None:
+        if img_base_np is None and img_move_raw is not None:
+            h, w = img_move_raw.shape[:2]
+            img_base = np.full((h, w, 3), 255, dtype=np.uint8)
+        elif img_move_raw is None and img_base_np is not None:
             h, w = img_base_np.shape[:2]
             img_base = img_base_np
-            img_move_raw = np.full((h, w, 3), Colors.WHITE, dtype=np.uint8)
-        elif img_base_np is not None and img_move_np is not None:
-            img_base = img_base_np
-            img_move_raw = img_move_np
-        else:
+            img_move_raw = np.full((h, w, 3), 255, dtype=np.uint8)
+        elif img_base_np is None:
             return None
+        else:
+            img_base = img_base_np
 
         # Align images
         try:
             img_new = alinear_imagen(img_base, img_move_raw)
-        except cv2.error:
+        except Exception:
             img_new = cv2.resize(img_move_raw, (img_base.shape[1], img_base.shape[0]))
 
         # Convert to grayscale
-        gray_base = cv2.cvtColor(img_base, cv2.COLOR_RGB2GRAY) if img_base.ndim == 3 else img_base
-        gray_new = cv2.cvtColor(img_new, cv2.COLOR_RGB2GRAY) if img_new.ndim == 3 else img_new
-        gray_base_copy = gray_base.copy()
+        gray_base = cv2.cvtColor(img_base, cv2.COLOR_RGB2GRAY) if len(img_base.shape) == 3 else img_base
+        gray_new = cv2.cvtColor(img_new, cv2.COLOR_RGB2GRAY) if len(img_new.shape) == 3 else img_new
 
-        # Create binary masks
-        inv_base = cv2.bitwise_not(gray_base)
-        inv_new = cv2.bitwise_not(gray_new)
-        _, bin_base = cv2.threshold(inv_base, 10, Colors.WHITE, cv2.THRESH_TOZERO)
-        _, bin_new = cv2.threshold(inv_new, 10, Colors.WHITE, cv2.THRESH_TOZERO)
+        # Apply blur if configured
+        if get_usar_blur():
+            gray_base = cv2.GaussianBlur(gray_base, (5, 5), 0)
+            gray_new = cv2.GaussianBlur(gray_new, (5, 5), 0)
+
+        # Binarization using configured threshold
+        umbral_bin = get_umbral_bin()
+        _, bin_base = cv2.threshold(cv2.bitwise_not(gray_base), umbral_bin, 255, cv2.THRESH_BINARY)
+        _, bin_new = cv2.threshold(cv2.bitwise_not(gray_new), umbral_bin, 255, cv2.THRESH_BINARY)
+
+        # Dilation using configured kernel size and iterations
+        k_size = get_kernel_size()
+        kernel = np.ones((k_size, k_size), np.uint8)
+        iteraciones = get_iteraciones()
+        
+        base_dilatada = cv2.dilate(bin_base, kernel, iterations=iteraciones)
+        new_dilatada = cv2.dilate(bin_new, kernel, iterations=iteraciones)
 
         # Calculate differences
-        kernel = np.ones((2, 2), np.uint8)
-        raw_green = cv2.subtract(bin_new, cv2.dilate(bin_base, kernel, iterations=1))
-        raw_magenta = cv2.subtract(bin_base, cv2.dilate(bin_new, kernel, iterations=1))
+        raw_green = cv2.subtract(bin_new, base_dilatada)
+        raw_magenta = cv2.subtract(bin_base, new_dilatada)
 
-        _, mask_green = cv2.threshold(raw_green, 1, Colors.WHITE, cv2.THRESH_BINARY)
-        _, mask_magenta = cv2.threshold(raw_magenta, 1, Colors.WHITE, cv2.THRESH_BINARY)
-
-        # Clean noise
-        c_green = limpiar_ruido_mascara(mask_green)
-        c_magenta = limpiar_ruido_mascara(mask_magenta)
+        # Clean noise using configured min_area
+        min_area = get_min_contour_area()
+        clean_green = limpiar_ruido_mascara(raw_green, min_area=min_area)
+        clean_magenta = limpiar_ruido_mascara(raw_magenta, min_area=min_area)
 
         # Create output image
-        ghost = cv2.addWeighted(gray_base_copy, 0.3, np.full_like(gray_base_copy, Colors.WHITE), 0.7, 0)
-        final = cv2.cvtColor(ghost, cv2.COLOR_GRAY2RGB)
-        final[c_green > 0] = Colors.GREEN
-        final[c_magenta > 0] = Colors.MAGENTA
+        bg_gray = cv2.cvtColor(img_base, cv2.COLOR_RGB2GRAY) if len(img_base.shape) == 3 else img_base
+        ghost_bg = cv2.addWeighted(bg_gray, 0.3, np.full_like(bg_gray, 255), 0.7, 0)
+        final_img = cv2.cvtColor(ghost_bg, cv2.COLOR_GRAY2RGB)
 
-        return Image.fromarray(final)
+        final_img[clean_green > 0] = Colors.GREEN
+        final_img[clean_magenta > 0] = Colors.MAGENTA
+
+        return Image.fromarray(final_img)
     
     except Exception as e:
         logger.error(f"Error processing page {index}: {e}")
